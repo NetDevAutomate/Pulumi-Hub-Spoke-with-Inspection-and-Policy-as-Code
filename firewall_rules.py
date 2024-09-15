@@ -3,6 +3,7 @@ import pulumi as pulumi
 
 
 def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
+    # Stateless rule to drop outbound ssh traffic
     stateless_drop_outbound_ssh = aws.networkfirewall.RuleGroup(
         "drop-outbound-ssh",
         aws.networkfirewall.RuleGroupArgs(
@@ -41,6 +42,7 @@ def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
         )
     )
 
+    # Stateful rule to drop outbound ssh traffic
     allow_icmp = aws.networkfirewall.RuleGroup(
         "allow-icmp",
         aws.networkfirewall.RuleGroupArgs(
@@ -65,6 +67,7 @@ def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
         )
     )
 
+    # Stateful rule to allow outbound https traffic to amazon.com
     allow_amazon = aws.networkfirewall.RuleGroup(
         "allow-amazon",
         aws.networkfirewall.RuleGroupArgs(
