@@ -3,6 +3,7 @@ import pulumi as pulumi
 
 
 def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
+    # Stateless rule that drops remote SSH traffic (TCP/22)
     drop_remote = aws.networkfirewall.RuleGroup(
         "drop-remote",
         aws.networkfirewall.RuleGroupArgs(
@@ -41,6 +42,46 @@ def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
         )
     )
 
+    # Stateless rule that allows unrestricted HTTP traffic (TCP/80)
+    allow_unrestricted_http = aws.networkfirewall.RuleGroup(
+        "allow-unrestricted-http",
+        aws.networkfirewall.RuleGroupArgs(
+            capacity=2,
+            name="allow-unrestricted-http",
+            type="STATELESS",
+            rule_group={
+                "rules_source": {
+                    "stateless_rules_and_custom_actions": {
+                        "stateless_rules": [{
+                            "priority": 2,
+                            "rule_definition": {
+                                "actions": ["aws:pass"],
+                                "match_attributes": {
+                                    "protocols": [6],  # TCP
+                                    "sources": [{
+                                        "address_definition": "0.0.0.0/0"
+                                    }],
+                                    "source_ports": [{
+                                        "from_port": 80,
+                                        "to_port": 80,
+                                    }],
+                                    "destinations": [{
+                                        "address_definition": "0.0.0.0/0"
+                                    }],
+                                    "destination_ports": [{
+                                        "from_port": 80,
+                                        "to_port": 80,
+                                    }]
+                                }
+                            }
+                        }]
+                    }
+                }
+            }
+        )
+    )
+
+    # Stateful rule that allows ICMP traffic within the SUPERNET
     allow_icmp = aws.networkfirewall.RuleGroup(
         "allow-icmp",
         aws.networkfirewall.RuleGroupArgs(
@@ -65,6 +106,36 @@ def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
         )
     )
 
+    # Stateful rule that allows unrestricted HTTP traffic
+    allow_unrestricted_http_stateful = aws.networkfirewall.RuleGroup(
+        "allow-unrestricted-http-stateful",
+        aws.networkfirewall.RuleGroupArgs(
+            capacity=50,
+            name="allow-unrestricted-http-stateful",
+            type="STATEFUL",
+            rule_group={
+                "rules_source": {
+                    "stateful_rules": [{
+                        "action": "PASS",
+                        "header": {
+                            "protocol": "HTTP",
+                            "direction": "ANY",
+                            "source": "0.0.0.0/0",
+                            "source_port": "80",
+                            "destination": "ANY",  # Unrestricted destination
+                            "destination_port": "80",  # Port 80
+                        },
+                        "rule_options": [{
+                            "keyword": "sid",
+                            "settings": ["1"],
+                        }],
+                    }]
+                }
+            }
+        )
+    )
+
+    # Stateful rule that allows Amazon HTTPS traffic using Suricata format
     allow_amazon = aws.networkfirewall.RuleGroup(
         "allow-amazon",
         aws.networkfirewall.RuleGroupArgs(
@@ -83,6 +154,25 @@ def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
         )
     )
 
+    # Suricata rule to allow unrestricted HTTP traffic
+    allow_unrestricted_http_suricata = aws.networkfirewall.RuleGroup(
+        "allow-unrestricted-http-suricata",
+        aws.networkfirewall.RuleGroupArgs(
+            capacity=100,
+            name="allow-unrestricted-http-suricata",
+            type="STATEFUL",
+            rule_group=aws.networkfirewall.RuleGroupRuleGroupArgs(
+                rules_source=aws.networkfirewall.RuleGroupRuleGroupRulesSourceArgs(
+                    rules_string='pass tcp any any -> any 80 (msg:"Allowing HTTP traffic to any destination on port 80"; sid:100001; rev:1;)'
+                ),
+                stateful_rule_options={
+                    "rule_order": "STRICT_ORDER",
+                },
+            )
+        )
+    )
+
+    # Firewall policy with all the rules in order
     policy = aws.networkfirewall.FirewallPolicy(
         "firewall-policy",
         aws.networkfirewall.FirewallPolicyArgs(
@@ -94,19 +184,33 @@ def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
                 stateful_engine_options={
                     "rule_order": "STRICT_ORDER"
                 },
-                stateless_rule_group_references=[{
-                    "priority": 10,
-                    "resource_arn": drop_remote.arn
-                }],
-                stateful_rule_group_references=[
+                stateless_rule_group_references=[
                     {
                         "priority": 10,
-                        "resource_arn": allow_icmp.arn,
+                        "resource_arn": drop_remote.arn
                     },
                     {
                         "priority": 20,
-                        "resource_arn": allow_amazon.arn,
+                        "resource_arn": allow_unrestricted_http.arn  # After drop-remote
+                    }
+                ],
+                stateful_rule_group_references=[
+                    {
+                        "priority": 10,
+                        "resource_arn": allow_icmp.arn
                     },
+                    {
+                        "priority": 20,
+                        "resource_arn": allow_unrestricted_http_stateful.arn  # After allow-icmp
+                    },
+                    {
+                        "priority": 30,
+                        "resource_arn": allow_amazon.arn
+                    },
+                    {
+                        "priority": 40,
+                        "resource_arn": allow_unrestricted_http_suricata.arn  # After allow-amazon
+                    }
                 ]
             )
         )
