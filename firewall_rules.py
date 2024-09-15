@@ -3,12 +3,12 @@ import pulumi as pulumi
 
 
 def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
-    # Stateless rule that drops remote SSH traffic (TCP/22)
-    drop_remote = aws.networkfirewall.RuleGroup(
-        "drop-remote",
+    # Stateless rule to drop outbound ssh traffic
+    stateless_drop_outbound_ssh = aws.networkfirewall.RuleGroup(
+        "drop-outbound-ssh",
         aws.networkfirewall.RuleGroupArgs(
             capacity=2,
-            name="drop-remote",
+            name="drop-outbound-ssh",
             type="STATELESS",
             rule_group={
                 "rules_source": {
@@ -105,7 +105,7 @@ def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
             }
         )
     )
-
+    
     # Stateful rule that allows unrestricted HTTP traffic
     allow_unrestricted_http_stateful = aws.networkfirewall.RuleGroup(
         "allow-unrestricted-http-stateful",
@@ -187,11 +187,11 @@ def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
                 stateless_rule_group_references=[
                     {
                         "priority": 10,
-                        "resource_arn": drop_remote.arn
+                        "resource_arn": stateless_drop_outbound_ssh.arn
                     },
                     {
                         "priority": 20,
-                        "resource_arn": allow_unrestricted_http.arn  # After drop-remote
+                        "resource_arn": allow_unrestricted_http.arn  # After drop-outbound-ssh
                     }
                 ],
                 stateful_rule_group_references=[
