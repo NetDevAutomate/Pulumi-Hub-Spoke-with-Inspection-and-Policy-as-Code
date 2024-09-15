@@ -3,11 +3,11 @@ import pulumi as pulumi
 
 
 def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
-    drop_remote = aws.networkfirewall.RuleGroup(
-        "drop-remote",
+    stateless_drop_outbound_ssh = aws.networkfirewall.RuleGroup(
+        "drop-outbound-ssh",
         aws.networkfirewall.RuleGroupArgs(
             capacity=2,
-            name="drop-remote",
+            name="drop-outbound-ssh",
             type="STATELESS",
             rule_group={
                 "rules_source": {
@@ -96,7 +96,7 @@ def create_firewall_policy(supernet_cidr: str) -> pulumi.Output[str]:
                 },
                 stateless_rule_group_references=[{
                     "priority": 10,
-                    "resource_arn": drop_remote.arn
+                    "resource_arn": stateless_drop_outbound_ssh.arn
                 }],
                 stateful_rule_group_references=[
                     {
